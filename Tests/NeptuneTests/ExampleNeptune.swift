@@ -1,11 +1,11 @@
 import Neptune
 
-func exampleECDSAWithNeptune() {
+func exampleECDSAWithNeptune() throws {
     // Create context and keys
-    let ctx = SECP256K1()
-    let secretKey = ctx.secretKey()
-    let publicKey = ctx.publicKey(secretKey: secretKey)
-    let serializedPublicKey = publicKey.serialize(format: .compressed)
+    let ctx = try SECP256K1()
+    let secretKey = try ctx.secretKey()
+    let publicKey = try ctx.publicKey(secretKey: secretKey)
+    let serializedPublicKey = try publicKey.serialize(format: .compressed)
 
     // Message to sign
     let msg_hash: [UInt8] = [
@@ -16,12 +16,12 @@ func exampleECDSAWithNeptune() {
     ]
 
     // Sign and serialize
-    let signature = secretKey.sign(messageHash: msg_hash)
-    let serializedSignature = signature.serialize(format: .compact)
+    let signature = try secretKey.sign(messageHash: msg_hash)
+    let serializedSignature = try signature.serialize(format: .compact)
 
     // Verify signature
-    let deserializedSignature = ctx.signature(normal: serializedSignature, format: .compact)
-    let deserializedPublicKey = ctx.publicKey(bytes: serializedPublicKey)
+    let deserializedSignature = try ctx.signature(normal: serializedSignature, format: .compact)
+    let deserializedPublicKey = try ctx.publicKey(bytes: serializedPublicKey)
     let isSignatureValid = deserializedPublicKey.verify(signature: deserializedSignature, messageHash: msg_hash)
 
     // Print results
@@ -31,7 +31,7 @@ func exampleECDSAWithNeptune() {
     print("Signature: \(hexadec(data: serializedSignature))")
 
     // Verify with static context for comparison
-    let isValid2 = SECP256K1
+    let isValid2 = try SECP256K1
         .limitedContext
         .publicKey(bytes: serializedPublicKey)
         .verify(signature: deserializedSignature, messageHash: msg_hash)
@@ -43,12 +43,12 @@ func exampleECDSAWithNeptune() {
     }
 }
 
-func exampleRecoverableSignature() {
+func exampleRecoverableSignature() throws {
     // Create context and keys
-    let ctx = SECP256K1()
-    let secretKey = ctx.secretKey()
-    let publicKey = ctx.publicKey(secretKey: secretKey)
-    let serializedPublicKey = publicKey.serialize(format: .compressed)
+    let ctx = try SECP256K1()
+    let secretKey = try ctx.secretKey()
+    let publicKey = try ctx.publicKey(secretKey: secretKey)
+    let serializedPublicKey = try publicKey.serialize(format: .compressed)
 
     // Message to sign
     let msg_hash: [UInt8] = [
@@ -59,19 +59,25 @@ func exampleRecoverableSignature() {
     ]
 
     // Create and serialize signatures
-    let recoverableSignature = secretKey.signRecoverable(messageHash: msg_hash)
-    let serializedRecoverableSignature = recoverableSignature.serialize()
-    let serializedSignature = recoverableSignature.convert().serialize()
+    let recoverableSignature = try secretKey.signRecoverable(messageHash: msg_hash)
+    let serializedRecoverableSignature = try recoverableSignature.serialize()
+    let serializedSignature = try recoverableSignature.convert().serialize()
 
     // Recover public key from signature
-    let deserializedRecoverableSignature = ctx.recoverableSignature(recoverable: serializedRecoverableSignature.bytes, recid: serializedRecoverableSignature.recid)
-    let recoveredPubKey = SECP256K1.PubKey.recover(signature: deserializedRecoverableSignature, messageHash: msg_hash)
-    guard let recoveredPublicKey = recoveredPubKey else {
+    let deserializedRecoverableSignature = try ctx.recoverableSignature(
+        recoverable: serializedRecoverableSignature.bytes,
+        recid: serializedRecoverableSignature.recid
+    )
+    
+    guard let recoveredPublicKey = SECP256K1.PubKey.recover(
+        signature: deserializedRecoverableSignature,
+        messageHash: msg_hash
+    ) else {
         fatalError("Failed to recover public key")
     }
 
     // Print results
-    print("Recovered Public Key: \(hexadec(data: recoveredPublicKey.serialize(format: .compressed)))")
+    print("Recovered Public Key: \(hexadec(data: try recoveredPublicKey.serialize(format: .compressed)))")
     print("Secret Key: \(hexadec(data: secretKey.serialize()))")
     print("Public Key: \(hexadec(data: serializedPublicKey))")
     print("Recoverable Signature: \(hexadec(data: serializedRecoverableSignature.bytes)) recid: \(serializedRecoverableSignature.recid)")
