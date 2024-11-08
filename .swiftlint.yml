@@ -4,6 +4,7 @@ included:
 excluded:
   - .build
   - .swiftpm
+  - .venv
   - Package.swift
 
 opt_in_rules:
