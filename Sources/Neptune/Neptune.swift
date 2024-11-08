@@ -8,7 +8,7 @@ import os.log
 /// A class for performing SECP256K1 elliptic curve operations
 public class SECP256K1 {
     /// Errors that can occur during SECP256K1 operations
-    public enum SECPError: Error, CustomStringConvertible {
+    public enum SECPError: Error, CustomStringConvertible, CaseIterable {
         /// Failed to generate cryptographically secure random bytes
         case randomGenerationFailed
         /// Failed to randomize the SECP256K1 context
@@ -21,16 +21,12 @@ public class SECP256K1 {
         case publicKeyCreationFailed
         /// Failed to parse serialized public key
         case publicKeyParseFailed
-        /// Failed to serialize public key
-        case publicKeySerializationFailed
         /// Public key length mismatch after serialization
         case publicKeyLengthMismatch
         /// Failed to parse signature from bytes
         case signatureParsingFailed
         /// Failed to serialize signature
         case signatureSerializationFailed
-        /// Failed to convert recoverable signature
-        case signatureConversionFailed
 
         public var description: String {
             switch self {
@@ -46,16 +42,12 @@ public class SECP256K1 {
                 return "Failed to create public key from secret key"
             case .publicKeyParseFailed:
                 return "Failed to parse serialized public key"
-            case .publicKeySerializationFailed:
-                return "Failed to serialize public key"
             case .publicKeyLengthMismatch:
                 return "Public key length mismatch after serialization"
             case .signatureParsingFailed:
                 return "Failed to parse signature from bytes"
             case .signatureSerializationFailed:
                 return "Failed to serialize signature"
-            case .signatureConversionFailed:
-                return "Failed to convert recoverable signature"
             }
         }
     }
@@ -199,7 +191,7 @@ public class SECP256K1 {
         /// - Parameter ctx: The context for SECP256K1 operations
         /// - Throws: SECPError.randomGenerationFailed if secure random bytes cannot be generated
         /// - Throws: SECPError.invalidSecretKey if the generated key is invalid
-        internal init(ctx: OpaquePointer!) throws {
+        fileprivate init(ctx: OpaquePointer!) throws {
             // Generate random secret key
             var seckey: [UInt8] = [UInt8](repeating: 0, count: 32)
             let statusSeckey = SecRandomCopyBytes(kSecRandomDefault, seckey.count, &seckey)
@@ -234,7 +226,7 @@ public class SECP256K1 {
         ///     - Must represent a valid secret key (a scalar in the range [1,n-1] where n is the curve order)
         ///   - ctx: The context for SECP256K1 operations
         /// - Throws: SECPError.invalidSecretKey if the provided bytes are not a valid secret key
-        internal init(bytes: [UInt8], ctx: OpaquePointer!) throws {
+        fileprivate init(bytes: [UInt8], ctx: OpaquePointer!) throws {
             var bytes = bytes
             Log.debug("Verifying provided secret key bytes")
             // Verify the secret key
@@ -302,7 +294,7 @@ public class SECP256K1 {
     }
     
     /// A public key for SECP256K1 operations
-    public class PubKey {
+    public class PubKey: Comparable {
         /// The context for SECP256K1 operations
         private var ctx: OpaquePointer!
 
@@ -313,7 +305,7 @@ public class SECP256K1 {
         /// - Parameters:
         ///   - pubkey: The existing public key
         ///   - ctx: The context for SECP256K1 operations
-        internal init(pubkey: secp256k1_pubkey, ctx: OpaquePointer!) {
+        fileprivate init(pubkey: secp256k1_pubkey, ctx: OpaquePointer!) {
             self.pubkey = pubkey
             self.ctx = ctx
             Log.debug("Created public key with existing underlying struct")
@@ -322,7 +314,7 @@ public class SECP256K1 {
         /// Creates a public key from a secret key
         /// - Parameter secretKey: The secret key
         /// - Throws: SECPError.publicKeyCreationFailed if public key creation fails
-        internal init(secretKey: SecKey, ctx: OpaquePointer!) throws {
+        fileprivate init(secretKey: SecKey, ctx: OpaquePointer!) throws {
             var pubkey = secp256k1_pubkey()
             var seckey = secretKey.serialize()
             defer{
@@ -346,7 +338,7 @@ public class SECP256K1 {
         ///   - ctx: The context for SECP256K1 operations
         /// - Requires: bytes.count must be 33 (compressed) or 65 (uncompressed)
         /// - Throws: SECPError.publicKeyParseFailed if the bytes cannot be parsed as a valid public key
-        internal init(bytes: [UInt8], ctx: OpaquePointer!) throws {
+        fileprivate init(bytes: [UInt8], ctx: OpaquePointer!) throws {
             var bytes = bytes
             var pubkey = secp256k1_pubkey()
             let return_val_pubkey = secp256k1_ec_pubkey_parse(ctx, &pubkey, &bytes, bytes.count)
@@ -367,18 +359,14 @@ public class SECP256K1 {
         ///   - For .uncompressed format: Returns exactly 65 bytes
         ///   - The bytes represent a valid public key point on the secp256k1 curve
         ///   - The bytes are in SEC format (0x02/0x03 prefix for compressed, 0x04 prefix for uncompressed)
-        /// - Throws: SECPError.publicKeySerializationFailed if serialization fails
         /// - Throws: SECPError.publicKeyLengthMismatch if the serialized length is incorrect
         public func serialize(format: Format) throws -> [UInt8] {
             var len = format == .compressed ? 33 : 65
             var serialized_pubkey = [UInt8](repeating: 0, count: len)
             let flags = format == .compressed ? UInt32(SECP256K1_EC_COMPRESSED) : UInt32(SECP256K1_EC_UNCOMPRESSED)
             Log.debug("Attempting to serialize public key in \(format) format")
-            let return_val_serialize = secp256k1_ec_pubkey_serialize(ctx, &serialized_pubkey, &len, &pubkey, flags)
-            guard return_val_serialize != 0 else {
-                Log.error("Failed to serialize public key")
-                throw SECPError.publicKeySerializationFailed
-            }
+            // Always returns 1
+            let _ = secp256k1_ec_pubkey_serialize(ctx, &serialized_pubkey, &len, &pubkey, flags) 
             guard len == serialized_pubkey.count else {
                 Log.error("Public key length mismatch after serialization")
                 throw SECPError.publicKeyLengthMismatch
@@ -427,6 +415,18 @@ public class SECP256K1 {
             Log.debug("Successfully recovered public key from signature")
             return PubKey(pubkey: pubkey, ctx: ctx)
         }
+
+        /// True if lhs < rhs ordered lexicographically
+        /// Comparable protocol implementation
+        public static func < (lhs: PubKey, rhs: PubKey) -> Bool {
+            return secp256k1_ec_pubkey_cmp(lhs.ctx, &lhs.pubkey, &rhs.pubkey) < 0
+        }
+
+        /// True if lhs == rhs
+        /// Equatable protocol implementation
+        public static func == (lhs: PubKey, rhs: PubKey) -> Bool {
+            return secp256k1_ec_pubkey_cmp(lhs.ctx, &lhs.pubkey, &rhs.pubkey) == 0
+         }
         
         /// The format for public key serialization
         public enum Format {
@@ -441,13 +441,13 @@ public class SECP256K1 {
         private var ctx: OpaquePointer!
 
         /// The signature
-        internal var signature: secp256k1_ecdsa_signature
+        fileprivate var signature: secp256k1_ecdsa_signature
 
         /// Creates a signature with existing underlying struct
         /// - Parameters:
         ///   - signature: The existing signature
         ///   - ctx: The context for SECP256K1 operations
-        internal init(signature: secp256k1_ecdsa_signature, ctx: OpaquePointer!) {
+        fileprivate init(signature: secp256k1_ecdsa_signature, ctx: OpaquePointer!) {
             self.signature = signature
             self.ctx = ctx
             Log.debug("Created signature with existing underlying struct")
@@ -461,7 +461,7 @@ public class SECP256K1 {
         ///   - format: The format (.compact or .der)
         ///   - ctx: The context for SECP256K1 operations
         /// - Throws: SECPError.signatureParsingFailed if the bytes cannot be parsed as a valid signature
-        internal init(bytes: [UInt8], format: Format, ctx: OpaquePointer!) throws {
+        fileprivate init(bytes: [UInt8], format: Format, ctx: OpaquePointer!) throws {
             Log.debug("Creating signature from bytes in \(format) format")
             var signature = secp256k1_ecdsa_signature()
             var bytes = bytes
@@ -501,11 +501,8 @@ public class SECP256K1 {
             case .compact:
                 Log.debug("Using compact format serialization")
                 var serialized_signature = [UInt8](repeating: 0, count: 64)
-                let return_val_serialize = secp256k1_ecdsa_signature_serialize_compact(ctx, &serialized_signature, &signature)
-                guard return_val_serialize != 0 else {
-                    Log.error("Failed to serialize signature in compact format")
-                    throw SECPError.signatureSerializationFailed
-                }
+                // This function always returns 1
+                _ = secp256k1_ecdsa_signature_serialize_compact(ctx, &serialized_signature, &signature)
                 Log.debug("Successfully serialized signature in compact format")
                 return serialized_signature
             case .der:
@@ -536,13 +533,13 @@ public class SECP256K1 {
         private var ctx: OpaquePointer!
 
         /// Signature
-        internal var signature: secp256k1_ecdsa_recoverable_signature
+        fileprivate var signature: secp256k1_ecdsa_recoverable_signature
 
         /// Creates a recoverable signature with existing underlying struct
         /// - Parameters:
         ///   - signature: The existing signature
         ///   - ctx: The context for SECP256K1 operations
-        internal init(signature: secp256k1_ecdsa_recoverable_signature, ctx: OpaquePointer!) {
+        fileprivate init(signature: secp256k1_ecdsa_recoverable_signature, ctx: OpaquePointer!) {
             self.signature = signature
             self.ctx = ctx
             Log.debug("Created recoverable signature with existing underlying struct")
@@ -558,8 +555,12 @@ public class SECP256K1 {
         ///   - format: The format (ignored for recoverable signatures)
         ///   - ctx: The context for SECP256K1 operations
         /// - Throws: SECPError.signatureParsingFailed if the bytes cannot be parsed as a valid recoverable signature
-        internal init(bytes: [UInt8], recid: Int32, ctx: OpaquePointer!) throws {
+        fileprivate init(bytes: [UInt8], recid: Int32, ctx: OpaquePointer!) throws {
             Log.debug("Creating recoverable signature from bytes")
+            guard recid >= 0 && recid <= 3 else {
+                Log.error("Invalid recovery id")
+                throw SECPError.signatureParsingFailed
+            }
             var bytes = bytes
             var recoverable_signature = secp256k1_ecdsa_recoverable_signature()
             let return_val = secp256k1_ecdsa_recoverable_signature_parse_compact(ctx, &recoverable_signature, &bytes, recid)
@@ -578,31 +579,23 @@ public class SECP256K1 {
         /// - Returns: The serialized signature and recovery id
         ///   - bytes: Always returns exactly 64 bytes representing the (r,s) values in big-endian format
         ///   - recid: Always returns a value in the range [0,3] that allows recovering the public key
-        /// - Throws: SECPError.signatureSerializationFailed if serialization fails
-        public func serialize() throws -> (bytes: [UInt8], recid: Int32) {
+        public func serialize() -> (bytes: [UInt8], recid: Int32) {
             Log.debug("Serializing recoverable signature")
             var serialized_signature = [UInt8](repeating: 0, count: 64)
             var recid: Int32 = 0
-            let return_val = secp256k1_ecdsa_recoverable_signature_serialize_compact(ctx, &serialized_signature, &recid, &signature)
-            guard return_val != 0 else {
-                Log.error("Failed to serialize recoverable signature")
-                throw SECPError.signatureSerializationFailed
-            }
+            // This function always returns 1
+            _ = secp256k1_ecdsa_recoverable_signature_serialize_compact(ctx, &serialized_signature, &recid, &signature)
             Log.debug("Successfully serialized recoverable signature")
             return (bytes: serialized_signature, recid: recid)
         }
 
         /// Converts the recoverable signature to a normal signature
         /// - Returns: The normal signature
-        /// - Throws: SECPError.signatureConversionFailed if conversion fails
-        public func convert() throws -> Signature {
+        public func convert() -> Signature {
             Log.debug("Converting recoverable signature to normal signature")
             var normal_signature = secp256k1_ecdsa_signature()
-            let return_val = secp256k1_ecdsa_recoverable_signature_convert(ctx, &normal_signature, &signature)
-            guard return_val != 0 else {
-                Log.error("Failed to convert recoverable signature")
-                throw SECPError.signatureConversionFailed
-            }
+            // This function always returns 1
+            _ = secp256k1_ecdsa_recoverable_signature_convert(ctx, &normal_signature, &signature)
             Log.debug("Successfully converted recoverable signature")
             return Signature(signature: normal_signature, ctx: ctx)
         }

@@ -60,8 +60,8 @@ func exampleRecoverableSignature() throws {
 
     // Create and serialize signatures
     let recoverableSignature = try secretKey.signRecoverable(messageHash: msg_hash)
-    let serializedRecoverableSignature = try recoverableSignature.serialize()
-    let serializedSignature = try recoverableSignature.convert().serialize()
+    let serializedRecoverableSignature = recoverableSignature.serialize()
+    let serializedSignature = try recoverableSignature.convert().serialize(format: .der)
 
     // Recover public key from signature
     let deserializedRecoverableSignature = try ctx.recoverableSignature(
@@ -74,6 +74,29 @@ func exampleRecoverableSignature() throws {
         messageHash: msg_hash
     ) else {
         fatalError("Failed to recover public key")
+    }
+
+    // Deserialize the .der signature
+    let deserializedSignature = try ctx.signature(normal: serializedSignature, format: .der)
+
+    // verify the deserialized signature
+    let isValid = recoveredPublicKey.verify(signature: deserializedSignature, messageHash: msg_hash)
+
+    guard isValid else {
+        fatalError("Signature verification mismatch between recoverable and der")
+    }
+
+    // Serialize and deserialize the secret key
+    var serializedSecretKey = secretKey.serialize()
+    defer { serializedSecretKey = [UInt8](repeating: 0, count: serializedSecretKey.count) }
+    let deserializedSecretKey = try ctx.secretKey(bytes: serializedSecretKey)
+
+    // Re-create public key from the deserialized secret key
+    let publicKey2 = try ctx.publicKey(secretKey: deserializedSecretKey)
+
+    // Compare public keys to test comparisons
+    guard recoveredPublicKey == publicKey2 && !(recoveredPublicKey < publicKey) && !(recoveredPublicKey > publicKey) else {
+        fatalError("Public key mismatch between original and deserialized")
     }
 
     // Print results
