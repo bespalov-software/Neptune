@@ -8,7 +8,7 @@ func exampleECDSAWithNeptune() throws {
     let serializedPublicKey = try publicKey.serialize(format: .compressed)
 
     // Message to sign
-    let msg_hash: [UInt8] = [
+    let messageHash: [UInt8] = [
         0x31, 0x5F, 0x5B, 0xDB, 0x76, 0xD0, 0x78, 0xC4,
         0x3B, 0x8A, 0xC0, 0x06, 0x4E, 0x4A, 0x01, 0x64,
         0x61, 0x2B, 0x1F, 0xCE, 0x77, 0xC8, 0x69, 0x34,
@@ -16,13 +16,19 @@ func exampleECDSAWithNeptune() throws {
     ]
 
     // Sign and serialize
-    let signature = try secretKey.sign(messageHash: msg_hash)
+    let signature = try secretKey.sign(messageHash: messageHash)
     let serializedSignature = try signature.serialize(format: .compact)
 
     // Verify signature
-    let deserializedSignature = try ctx.signature(normal: serializedSignature, format: .compact)
+    let deserializedSignature = try ctx.signature(
+        normal: serializedSignature,
+        format: .compact
+    )
     let deserializedPublicKey = try ctx.publicKey(bytes: serializedPublicKey)
-    let isSignatureValid = deserializedPublicKey.verify(signature: deserializedSignature, messageHash: msg_hash)
+    let isSignatureValid = deserializedPublicKey.verify(
+        signature: deserializedSignature,
+        messageHash: messageHash
+    )
 
     // Print results
     print("Is the signature valid? \(isSignatureValid ? "true" : "false")")
@@ -34,12 +40,14 @@ func exampleECDSAWithNeptune() throws {
     let isValid2 = try SECP256K1
         .limitedContext
         .publicKey(bytes: serializedPublicKey)
-        .verify(signature: deserializedSignature, messageHash: msg_hash)
+        .verify(signature: deserializedSignature, messageHash: messageHash)
 
     print("Is the signature valid? \(isValid2 ? "true" : "false")")
 
     guard isValid2 == isSignatureValid else {
-        fatalError("Signature verification mismatch between context and static context")
+        fatalError(
+            "Signature verification mismatch between context and static context"
+        )
     }
 }
 
@@ -51,7 +59,7 @@ func exampleRecoverableSignature() throws {
     let serializedPublicKey = try publicKey.serialize(format: .compressed)
 
     // Message to sign
-    let msg_hash: [UInt8] = [
+    let messageHash: [UInt8] = [
         0x31, 0x5F, 0x5B, 0xDB, 0x76, 0xD0, 0x78, 0xC4,
         0x3B, 0x8A, 0xC0, 0x06, 0x4E, 0x4A, 0x01, 0x64,
         0x61, 0x2B, 0x1F, 0xCE, 0x77, 0xC8, 0x69, 0x34,
@@ -59,50 +67,72 @@ func exampleRecoverableSignature() throws {
     ]
 
     // Create and serialize signatures
-    let recoverableSignature = try secretKey.signRecoverable(messageHash: msg_hash)
+    let recoverableSignature = try secretKey
+        .signRecoverable(messageHash: messageHash)
     let serializedRecoverableSignature = recoverableSignature.serialize()
-    let serializedSignature = try recoverableSignature.convert().serialize(format: .der)
+    let serializedSignature = try recoverableSignature.convert()
+        .serialize(format: .der)
 
     // Recover public key from signature
     let deserializedRecoverableSignature = try ctx.recoverableSignature(
         recoverable: serializedRecoverableSignature.bytes,
         recid: serializedRecoverableSignature.recid
     )
-    
+
     guard let recoveredPublicKey = SECP256K1.PubKey.recover(
         signature: deserializedRecoverableSignature,
-        messageHash: msg_hash
+        messageHash: messageHash
     ) else {
         fatalError("Failed to recover public key")
     }
 
     // Deserialize the .der signature
-    let deserializedSignature = try ctx.signature(normal: serializedSignature, format: .der)
+    let deserializedSignature = try ctx.signature(
+        normal: serializedSignature,
+        format: .der
+    )
 
     // verify the deserialized signature
-    let isValid = recoveredPublicKey.verify(signature: deserializedSignature, messageHash: msg_hash)
+    let isValid = recoveredPublicKey.verify(
+        signature: deserializedSignature,
+        messageHash: messageHash
+    )
 
     guard isValid else {
-        fatalError("Signature verification mismatch between recoverable and der")
+        fatalError(
+            "Signature verification mismatch between recoverable and der"
+        )
     }
 
     // Serialize and deserialize the secret key
     var serializedSecretKey = secretKey.serialize()
-    defer { serializedSecretKey = [UInt8](repeating: 0, count: serializedSecretKey.count) }
+    defer { serializedSecretKey = [UInt8](
+        repeating: 0,
+        count: serializedSecretKey.count
+    ) }
     let deserializedSecretKey = try ctx.secretKey(bytes: serializedSecretKey)
 
     // Re-create public key from the deserialized secret key
     let publicKey2 = try ctx.publicKey(secretKey: deserializedSecretKey)
 
     // Compare public keys to test comparisons
-    guard recoveredPublicKey == publicKey2 && !(recoveredPublicKey < publicKey) && !(recoveredPublicKey > publicKey) else {
+    guard recoveredPublicKey == publicKey2, !(recoveredPublicKey < publicKey),
+          !(recoveredPublicKey > publicKey)
+    else {
         fatalError("Public key mismatch between original and deserialized")
     }
 
     // Print results
-    print("Recovered Public Key: \(hexadec(data: try recoveredPublicKey.serialize(format: .compressed)))")
+    try print(
+        "Recovered Public Key: " +
+            "\(hexadec(data: recoveredPublicKey.serialize(format: .compressed)))"
+    )
     print("Secret Key: \(hexadec(data: secretKey.serialize()))")
     print("Public Key: \(hexadec(data: serializedPublicKey))")
-    print("Recoverable Signature: \(hexadec(data: serializedRecoverableSignature.bytes)) recid: \(serializedRecoverableSignature.recid)")
+    print(
+        "Recoverable Signature: " +
+            "\(hexadec(data: serializedRecoverableSignature.bytes)) " +
+            "recid: \(serializedRecoverableSignature.recid)"
+    )
     print("Signature: \(hexadec(data: serializedSignature))")
 }

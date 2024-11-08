@@ -1,5 +1,6 @@
 // swift-tools-version: 6.0
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// The swift-tools-version declares the minimum version of Swift required to
+// build this package.
 
 import PackageDescription
 
@@ -11,17 +12,21 @@ let package = Package(
         .tvOS(.v15),
         .watchOS(.v8),
         .visionOS(.v1),
-        .macCatalyst(.v15)
+        .macCatalyst(.v15),
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
+        // Products define the executables and libraries a package produces,
+        // making them visible to other packages.
         .library(
             name: "Neptune",
-            targets: ["Neptune"]),
+            targets: ["Neptune"]
+        ),
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
+        // Targets are the basic building blocks of a package, defining a module
+        // or a test suite.
+        // Targets can depend on other targets in this package and products from
+        // dependencies.
         .target(
             name: "Neptune",
             dependencies: ["CNeptune"]
@@ -30,7 +35,8 @@ let package = Package(
             name: "NeptuneTests",
             dependencies: ["Neptune"]
         ),
-        .target(name: "CNeptune",
+        .target(
+            name: "CNeptune",
             sources: [
                 "./secp256k1/src/secp256k1.c",
                 "./secp256k1/src/precomputed_ecmult.c",
