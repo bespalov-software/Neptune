@@ -1,3 +1,4 @@
+import Foundation
 @testable import Neptune
 import Testing
 
@@ -80,4 +81,11 @@ func whenDeserializingRecoverableSignatureFromBytesThrowsError() throws {
             _ = try ctx.recoverableSignature(recoverable: bytes, recid: recid)
         }
     }
+}
+
+@Test
+func testHexadec() async throws {
+    let data: [UInt8] = [0x00, 0x12, 0x34]
+    let hex = hexadec(data: data)
+    #expect(hex == "0x001234")
 }

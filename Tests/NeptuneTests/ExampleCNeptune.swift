@@ -171,6 +171,6 @@ func exampleECDSA() {
 
 func hexadec(data: [UInt8]) -> String {
     "0x" + data.map {
-        String($0, radix: 16, uppercase: true)
+        String(format: "%02x", $0)
     }.joined()
 }
