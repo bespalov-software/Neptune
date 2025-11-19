@@ -3,14 +3,14 @@ repos:
     hooks:
     -   id: swift-format
         name: SwiftFormat
-        entry: swiftformat .
+        entry: mint run swiftformat .
         language: system
         types: [swift]
         pass_filenames: false
 
     -   id: swift-lint
         name: SwiftLint
-        entry: swiftlint --strict
+        entry: mint run swiftlint --strict
         language: system
         types: [swift]
         pass_filenames: false

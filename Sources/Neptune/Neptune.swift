@@ -49,6 +49,28 @@ public class SECP256K1 {
         }
     }
 
+    /// Log level for controlling logging output
+    public enum LogLevel: Int, Comparable {
+        /// No logging output
+        case off = 0
+        /// Only error messages are logged
+        case error = 1
+        /// All messages including debug are logged
+        case debug = 2
+
+        public static func < (lhs: LogLevel, rhs: LogLevel) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    /// The current log level for all SECP256K1 operations
+    /// Default is `.off` to prevent unexpected logs in production
+    /// - Note: This property is marked as `nonisolated(unsafe)` because it's
+    /// intended to be
+    ///   a global configuration setting. Set it once at app startup, before any
+    /// concurrent access.
+    public nonisolated(unsafe) static var logLevel: LogLevel = .off
+
     /// Logger
     /// subsystem: software.bespalov.neptune
     /// category: secp256k1
@@ -59,10 +81,12 @@ public class SECP256K1 {
         )
 
         static func debug(_ message: String) {
+            guard SECP256K1.logLevel >= .debug else { return }
             logger.debug("\(message)")
         }
 
         static func error(_ message: String) {
+            guard SECP256K1.logLevel >= .error else { return }
             logger.error("\(message)")
         }
     }
@@ -71,28 +95,86 @@ public class SECP256K1 {
     private var ctx: OpaquePointer!
 
     /// Creates and randomizes a new SECP256K1 context
+    ///
+    /// The context is an opaque data structure that stores:
+    /// - **Randomization data** (primary purpose): Blinding values used for
+    /// side-channel
+    ///   protection during elliptic curve operations involving secret keys
+    /// - **Precomputation tables**: Optimized lookup tables for elliptic curve
+    /// point
+    ///   multiplications with the generator point (G)
+    /// - **Error callbacks**: Function pointers for handling illegal arguments
+    /// and errors
+    ///
+    /// **What randomization does:**
+    /// Randomization uses a 32-byte seed to generate secret blinding values
+    /// that mask
+    /// internal computations. This makes operations like signing and public key
+    /// generation
+    /// resistant to side-channel attacks (power analysis, timing attacks,
+    /// electromagnetic
+    /// leakage) by ensuring that the internal computation patterns are
+    /// independent of the
+    /// secret key values. Specifically, the seed is used to blind scalar
+    /// multiplications
+    /// with the base point, transforming operations like `R = gn*G` into `R =
+    /// (gn - b)*G + b*G`
+    /// where `b` is a secret random blinding value.
+    ///
+    /// **Multi-threading:**
+    /// A constructed context can safely be used from multiple threads
+    /// simultaneously for
+    /// read-only operations. However, operations that modify the context (like
+    /// randomization
+    /// or destruction) require exclusive access. Since this initializer
+    /// randomizes the context
+    /// at creation time, no additional locking is needed for subsequent
+    /// read-only operations
+    /// across threads. If you need to re-randomize the context later, use
+    /// appropriate
+    /// synchronization (e.g., a read-write lock) to coordinate access.
+    ///
+    /// - Parameter seed: Optional 32-byte random seed for context
+    /// randomization. If `nil`,
+    ///   a cryptographically secure random seed will be generated
+    /// automatically. If provided,
+    ///   must be exactly 32 bytes in length.
     /// - Throws: SECPError.randomGenerationFailed if secure random bytes cannot
     /// be generated
+    ///   or if the provided seed is not exactly 32 bytes
     /// - Throws: SECPError.contextRandomizationFailed if context randomization
     /// fails
-    public init() throws {
+    public init(seed: [UInt8]? = nil) throws {
         // Create context
         let ctx: OpaquePointer! =
             secp256k1_context_create(UInt32(SECP256K1_CONTEXT_NONE))
         Log.debug("Created SECP256K1 context")
 
-        // Generate random seed for context
-        var randomize = [UInt8](repeating: 0, count: 32)
-        let statusRandomize = SecRandomCopyBytes(
-            kSecRandomDefault,
-            randomize.count,
-            &randomize
-        )
-        guard statusRandomize == errSecSuccess else {
-            Log.error("Failed to generate random bytes for context")
-            throw SECPError.randomGenerationFailed
+        // Get or generate random seed for context
+        var randomize: [UInt8]
+        if let providedSeed = seed {
+            guard providedSeed.count == 32 else {
+                Log
+                    .error(
+                        "Provided seed must be exactly 32 bytes, got \(providedSeed.count)"
+                    )
+                throw SECPError.randomGenerationFailed
+            }
+            randomize = providedSeed
+            Log.debug("Using provided seed for context")
+        } else {
+            randomize = [UInt8](repeating: 0, count: 32)
+            let statusRandomize = SecRandomCopyBytes(
+                kSecRandomDefault,
+                randomize.count,
+                &randomize
+            )
+            guard statusRandomize == errSecSuccess else {
+                Log.error("Failed to generate random bytes for context")
+                throw SECPError.randomGenerationFailed
+            }
+            Log.debug("Generated random seed for context")
         }
-        Log.debug("Generated random seed for context")
 
         // Randomize the context
         let returnValRandomize = secp256k1_context_randomize(ctx, &randomize)
@@ -105,7 +187,7 @@ public class SECP256K1 {
         self.ctx = ctx
     }
 
-    /// Creates a context with existing context
+    /// Creates a SECP256K1 with an existing underlying context
     /// - Parameter ctx: The existing context
     public init(ctx: OpaquePointer!) {
         self.ctx = ctx
@@ -122,6 +204,30 @@ public class SECP256K1 {
     }
 
     /// Returns a static context after performing self-test
+    ///
+    /// The limited context is a lightweight, zero-allocation context that is
+    /// useful when:
+    /// - **Avoiding dynamic memory allocation**: The static context doesn't
+    /// require heap allocation,
+    ///   making it suitable for environments with memory constraints or where
+    /// avoiding `malloc`/`free`
+    ///   is desirable.
+    /// - **Read-only operations**: Suitable for operations that don't involve
+    /// secret keys, such as:
+    ///   signature verification, public key parsing/serialization, and other
+    /// public-key operations.
+    ///
+    /// **Important limitations:**
+    /// - Cannot be used for operations involving secret keys, such as signing
+    /// or generating public
+    ///   keys from secret keys.
+    /// - Cannot be randomized or destroyed (it's a static, shared context).
+    /// - Should only be used for verification-only use cases where no secret
+    /// keys are involved.
+    ///
+    /// This context automatically performs a self-test before use to detect
+    /// serious usage errors
+    /// (e.g., wrong endianness compilation).
     public static var limitedContext: SECP256K1 {
         secp256k1_selftest()
         return SECP256K1(ctx: secp256k1_context_static)
@@ -153,6 +259,8 @@ public class SECP256K1 {
     /// - Requires: bytes.count must be 33 (compressed) or 65 (uncompressed)
     /// - Throws: SECPError.publicKeyParseFailed if the bytes cannot be parsed
     /// as a valid public key
+    /// - Note: This operation is also available with `limitedContext` for
+    /// zero-allocation usage.
     public func publicKey(bytes: [UInt8]) throws -> PubKey {
         try PubKey(bytes: bytes, ctx: ctx)
     }
@@ -167,7 +275,7 @@ public class SECP256K1 {
 
     /// Creates a signature from serialized bytes
     /// - Parameters:
-    ///   - normal: The serialized signature
+    ///   - bytes: The serialized signature
     ///     - For .compact format: Must be exactly 64 bytes
     ///     - For .der format: Must be a valid DER-encoded signature (70-72
     /// bytes)
@@ -175,6 +283,8 @@ public class SECP256K1 {
     /// - Returns: The signature
     /// - Throws: SECPError.signatureParsingFailed if the bytes cannot be parsed
     /// as a valid signature
+    /// - Note: This operation is also available with `limitedContext` for
+    /// zero-allocation usage.
     public func signature(
         normal bytes: [UInt8],
         format: Signature.Format
@@ -191,6 +301,8 @@ public class SECP256K1 {
     /// - Returns: The signature
     /// - Throws: SECPError.signatureParsingFailed if the bytes cannot be parsed
     /// as a valid recoverable signature
+    /// - Note: This operation is also available with `limitedContext` for
+    /// zero-allocation usage.
     public func recoverableSignature(
         recoverable: [UInt8],
         recid: Int32
@@ -418,6 +530,8 @@ public class SECP256K1 {
         /// 0x04 prefix for uncompressed)
         /// - Throws: SECPError.publicKeyLengthMismatch if the serialized length
         /// is incorrect
+        /// - Note: This operation is also available with `limitedContext` for
+        /// zero-allocation usage.
         public func serialize(format: Format) throws -> [UInt8] {
             var len = format == .compressed ? 33 : 65
             var serializedPubkey = [UInt8](repeating: 0, count: len)
@@ -449,6 +563,8 @@ public class SECP256K1 {
         ///     - Must be exactly 32 bytes
         ///     - Must be a hash of the message that was signed
         /// - Returns: Whether the signature is valid
+        /// - Note: This operation is also available with `limitedContext` for
+        /// zero-allocation usage.
         public func verify(signature: Signature, messageHash: [UInt8]) -> Bool {
             Log.debug("Attempting to verify signature")
             var messageHash = messageHash
@@ -596,6 +712,8 @@ public class SECP256K1 {
         ///   - For .der format: The bytes are in DER format
         /// - Throws: SECPError.signatureSerializationFailed if serialization
         /// fails
+        /// - Note: This operation is also available with `limitedContext` for
+        /// zero-allocation usage.
         public func serialize(format: Format = .compact) throws -> [UInt8] {
             Log.debug("Serializing signature in \(format) format")
             switch format {
@@ -713,6 +831,8 @@ public class SECP256K1 {
         /// values in big-endian format
         ///   - recid: Always returns a value in the range [0,3] that allows
         /// recovering the public key
+        /// - Note: This operation is also available with `limitedContext` for
+        /// zero-allocation usage.
         public func serialize() -> (bytes: [UInt8], recid: Int32) {
             Log.debug("Serializing recoverable signature")
             var serializedSignature = [UInt8](repeating: 0, count: 64)

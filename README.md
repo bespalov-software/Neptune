@@ -143,12 +143,33 @@ The main class for performing secp256k1 operations.
 
 ```swift
 public class SECP256K1 {
-    public init() throws
+    /// Creates a new randomized context. If seed is nil, generates cryptographically secure random seed.
+    /// - Parameter seed: Optional 32-byte random seed for context randomization
+    public init(seed: [UInt8]? = nil) throws
+    
+    /// Returns a static, zero-allocation context for verification-only operations (no secret keys).
+    public static var limitedContext: SECP256K1 { get }
+    
+    /// Creates a new random secret key (32 bytes).
     public func secretKey() throws -> SecKey
+    
+    /// Creates a secret key from serialized bytes (must be exactly 32 bytes).
     public func secretKey(bytes: [UInt8]) throws -> SecKey
+    
+    /// Creates a public key from a secret key.
     public func publicKey(secretKey: SecKey) throws -> PubKey
+    
+    /// Creates a public key from serialized bytes (33 bytes compressed or 65 bytes uncompressed).
     public func publicKey(bytes: [UInt8]) throws -> PubKey
+    
+    /// Creates a signature from serialized bytes.
+    /// - Parameter normal: Serialized signature (64 bytes for .compact, 70-72 bytes for .der)
+    /// - Parameter format: The signature format (.compact or .der)
     public func signature(normal bytes: [UInt8], format: Signature.Format) throws -> Signature
+    
+    /// Creates a recoverable signature from serialized bytes.
+    /// - Parameter recoverable: Serialized signature (must be exactly 64 bytes)
+    /// - Parameter recid: Recovery id (must be in range [0,3])
     public func recoverableSignature(recoverable: [UInt8], recid: Int32) throws -> RecoverableSignature
 }
 ```
@@ -159,8 +180,13 @@ Represents a secret key (private key).
 
 ```swift
 public class SecKey {
+    /// Signs a message hash (must be exactly 32 bytes, typically SHA-256) to produce a normal signature.
     public func sign(messageHash: [UInt8]) throws -> Signature
+    
+    /// Signs a message hash (must be exactly 32 bytes, typically SHA-256) to produce a recoverable signature.
     public func signRecoverable(messageHash: [UInt8]) throws -> RecoverableSignature
+    
+    /// Serializes the secret key to bytes (always returns exactly 32 bytes).
     public func serialize() -> [UInt8]
 }
 ```
@@ -171,8 +197,13 @@ Represents a public key.
 
 ```swift
 public class PubKey: Comparable {
+    /// Verifies a signature against a message hash (must be exactly 32 bytes).
     public func verify(signature: Signature, messageHash: [UInt8]) -> Bool
+    
+    /// Serializes the public key (33 bytes for .compressed, 65 bytes for .uncompressed).
     public func serialize(format: Format) throws -> [UInt8]
+    
+    /// Recovers a public key from a recoverable signature and message hash (must be exactly 32 bytes).
     public static func recover(signature: RecoverableSignature, messageHash: [UInt8]) -> PubKey?
     
     public enum Format {
@@ -188,6 +219,7 @@ Represents a normal ECDSA signature.
 
 ```swift
 public class Signature {
+    /// Serializes the signature (64 bytes for .compact, 70-72 bytes for .der).
     public func serialize(format: Format = .compact) throws -> [UInt8]
     
     public enum Format {
@@ -203,7 +235,10 @@ Represents a recoverable ECDSA signature.
 
 ```swift
 public class RecoverableSignature {
+    /// Serializes the signature into compact format (always returns 64 bytes and recid in [0,3]).
     public func serialize() -> (bytes: [UInt8], recid: Int32)
+    
+    /// Converts the recoverable signature to a normal signature.
     public func convert() -> Signature
 }
 ```
@@ -231,6 +266,7 @@ public enum SECPError: Error {
 - Swift 6.0+
 - Xcode 15.0+ (for development)
 - Git with submodule support
+- **Mint** (for running SwiftLint and SwiftFormat) - Install via `brew install mint`
 
 ### Setting Up the Development Environment
 
@@ -254,16 +290,28 @@ public enum SECPError: Error {
 
 This project uses the following tools for code quality:
 
+- **Mint** - Package manager for Swift command-line tools
+  ```bash
+  # Install Mint (requires Homebrew)
+  brew install mint
+  
+  # Install project dependencies from Mintfile
+  mint bootstrap
+  ```
+
 - **SwiftLint** - Linting and style checking
   ```bash
-  brew install swiftlint
-  swiftlint
+  # Run via Mint (version pinned in Mintfile)
+  mint run swiftlint
+  
+  # Or run with strict mode
+  mint run swiftlint --strict
   ```
 
 - **SwiftFormat** - Code formatting
   ```bash
-  brew install swiftformat
-  swiftformat .
+  # Run via Mint (version pinned in Mintfile)
+  mint run swiftformat .
   ```
 
 - **pre-commit** - Git hooks for quality checks
@@ -273,6 +321,8 @@ This project uses the following tools for code quality:
   pip install pre-commit
   pre-commit install
   ```
+  
+  The pre-commit hooks automatically run SwiftFormat, SwiftLint, and tests before each commit. These hooks use Mint to ensure consistent tool versions across all developers.
 
 ### Building
 
@@ -292,8 +342,9 @@ swift test
 
 - Follow Swift API Design Guidelines
 - Use conventional commits: https://www.conventionalcommits.org/
-- Code is automatically formatted with SwiftFormat
-- Linting is enforced via SwiftLint
+- Code is automatically formatted with SwiftFormat (via Mint)
+- Linting is enforced via SwiftLint (via Mint)
+- Tool versions are pinned in `Mintfile` for consistency across all developers
 
 ### Updating secp256k1 Submodule
 
