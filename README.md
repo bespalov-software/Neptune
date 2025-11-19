@@ -135,6 +135,8 @@ let uncompressed = try publicKey.serialize(format: .uncompressed)  // 65 bytes
 
 ## API Documentation
 
+📖 **Full API documentation**: [bespalov.software/Neptune/documentation/neptune/](https://bespalov.software/Neptune/documentation/neptune/)
+
 ### Main Types
 
 #### `SECP256K1`
@@ -394,7 +396,9 @@ This project is built on top of [bitcoin-core/secp256k1](https://github.com/bitc
 
 ## Support
 
-- **Documentation**: Check this README and inline code documentation
+- **Documentation**: 
+  - Full API documentation: [bespalov.software/Neptune/documentation/neptune/](https://bespalov.software/Neptune/documentation/neptune/)
+  - This README and inline code documentation
 - **Issues**: [GitHub Issues](https://github.com/bespalov-software/Neptune/issues)
 - **Professional Support**: Need help with integration, custom development, or have questions? Contact us at [hello@bespalov.software](mailto:hello@bespalov.software) or visit [bespalov.software](https://bespalov.software)
 - **Sponsorship**: Interested in sponsoring this project or other services? Reach out via [hello@bespalov.software](mailto:hello@bespalov.software) or visit [bespalov.software](https://bespalov.software)
