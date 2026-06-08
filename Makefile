@@ -25,6 +25,9 @@ all: check-secp256k1
 
 # Documentation paths
 DOCS_DIR := docs
+DOCC_PLUGIN_URL := https://github.com/swiftlang/swift-docc-plugin
+DOCC_PLUGIN_FROM := 1.1.0
+PACKAGE_MANIFEST := Package.swift
 
 help:
 	@echo "Neptune Swift Package Makefile"
@@ -93,25 +96,35 @@ pull-secp256k1: init-secp256k1
 	@echo "⚠️  Note: You may need to commit the submodule update in the parent repository"
 	@$(MAKE) check-secp256k1
 
-# Generate documentation using Swift-DocC Plugin
+# Generate documentation using Swift-DocC Plugin.
+# The plugin is added to Package.swift only for this target so downstream apps
+# (Xcode/Tuist) never need to resolve swift-docc-plugin. See Swift Forums:
+# https://forums.swift.org/t/how-do-i-build-html/81972
 generate-docs:
 	@echo "Generating Swift documentation..."
 	@if ! command -v swift >/dev/null 2>&1; then \
 		echo "❌ ERROR: Swift is not installed or not in PATH"; \
 		exit 1; \
 	fi
-	@echo "Resolving package dependencies..."
-	@swift package resolve || (echo "❌ ERROR: Failed to resolve package dependencies"; exit 1)
-	@echo "Building package..."
-	@swift build || (echo "❌ ERROR: Failed to build package"; exit 1)
-	@echo "Generating documentation with static hosting transformation..."
-	@swift package --allow-writing-to-directory $(DOCS_DIR) \
+	@manifest_backup=$$(mktemp); \
+	cp "$(PACKAGE_MANIFEST)" "$$manifest_backup"; \
+	trap 'cp "$$manifest_backup" "$(PACKAGE_MANIFEST)"' EXIT; \
+	if ! grep -q 'github.com/swiftlang/swift-docc-plugin' "$(PACKAGE_MANIFEST)"; then \
+		echo "Adding swift-docc-plugin temporarily for documentation build..."; \
+		swift package add-dependency "$(DOCC_PLUGIN_URL)" --from "$(DOCC_PLUGIN_FROM)"; \
+	fi; \
+	echo "Resolving package dependencies..."; \
+	swift package resolve || (echo "❌ ERROR: Failed to resolve package dependencies"; exit 1); \
+	echo "Building package..."; \
+	swift build || (echo "❌ ERROR: Failed to build package"; exit 1); \
+	echo "Generating documentation with static hosting transformation..."; \
+	swift package --allow-writing-to-directory "$(DOCS_DIR)" \
 		generate-documentation \
 		--target Neptune \
-		--output-path $(DOCS_DIR) \
+		--output-path "$(DOCS_DIR)" \
 		--transform-for-static-hosting \
-		--hosting-base-path /Neptune || (echo "❌ ERROR: Failed to generate documentation"; exit 1)
-	@echo "✓ Documentation generated in $(DOCS_DIR)/"
+		--hosting-base-path /Neptune || (echo "❌ ERROR: Failed to generate documentation"; exit 1); \
+	echo "✓ Documentation generated in $(DOCS_DIR)/"
 	@echo ""
 	@echo "To publish on GitHub Pages:"
 	@echo "  1. Commit the docs/ directory"
